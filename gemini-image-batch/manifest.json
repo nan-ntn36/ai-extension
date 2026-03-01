@@ -1,0 +1,29 @@
+{
+  "manifest_version": 3,
+  "name": "AI Batch Image Generator",
+  "version": "4.0.0",
+  "description": "Tạo loạt hình ảnh tự động trên Gemini, Grok & Veo 3 - identity preservation, outfit swap, video",
+  "permissions": ["activeTab", "storage", "downloads"],
+  "content_scripts": [
+    {
+      "matches": ["https://gemini.google.com/*"],
+      "js": ["api-interceptor.js"],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": ["https://gemini.google.com/*", "https://grok.com/*", "https://labs.google/*"],
+      "js": ["adapters/gemini.js", "adapters/grok.js", "adapters/flow.js", "content.js"],
+      "css": ["panel.css"],
+      "run_at": "document_idle"
+    }
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}
