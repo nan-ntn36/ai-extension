@@ -9,7 +9,9 @@
   // ── Site Detection ──
   function getSite() {
     const host = window.location.hostname;
+    const path = window.location.pathname;
     if (host.includes('gemini.google.com')) return 'gemini';
+    if (host.includes('grok.com') && path.startsWith('/imagine')) return 'grok-imagine';
     if (host.includes('grok.com')) return 'grok';
     if (host.includes('labs.google')) return 'flow';
     return 'unknown';
@@ -249,6 +251,7 @@
                 <div class="gbig-section-label"><span class="num">3</span> Nền tảng</div>
                 <div class="gbig-platform-group">
                   <button class="gbig-platform-btn active" data-platform="chat">💬 Gemini/Grok Chat</button>
+                  <button class="gbig-platform-btn" data-platform="grok-imagine">🎥 Grok Imagine</button>
                   <button class="gbig-platform-btn" data-platform="flow">🎬 Veo 3 (Flow)</button>
                 </div>
               </div>
@@ -1567,8 +1570,14 @@ Be as detailed as possible. Emphasize the Vietnamese/Asian features. Just give m
 
       // Get outfit swap prompt from adapter or default
       progressText.textContent = 'Tạo ảnh mới...';
-      const prompt = ADAPTER?.buildOutfitSwapPrompt?.() || 
-        `Look at the two images. Image 1 is the model. Image 2 shows the outfit. Generate a photo of the SAME person from Image 1 wearing the EXACT outfit from Image 2. DO NOT ALTER FACE. Keep exact same face, hair, body. Only change clothing. Aspect ratio ${state.outfitRatio}. Single image only.`;
+      const prompt = ADAPTER?.buildOutfitSwapPrompt?.(state.outfitRatio) || 
+        `Look at the two images. Image 1 is the model. Image 2 shows the outfit.
+
+TASK: Generate a FULL BODY photo (head to toe) of the SAME person from Image 1 wearing the EXACT outfit from Image 2.
+
+OUTFIT: Copy EVERY detail — neckline, sleeves, length, pattern, color, fabric, accessories. Do NOT simplify or modify any design element.
+PERSON: DO NOT ALTER FACE. Keep exact same face, hair, body. FULL BODY framing.
+Aspect ratio ${state.outfitRatio || '3:4'}. Single image only.`;
 
       await typeIntoChatInput(prompt);
       await sleep(300);
@@ -1636,8 +1645,12 @@ Be as detailed as possible. Emphasize the Vietnamese/Asian features. Just give m
     progressText.textContent = '🔄 Tạo lại với bảo vệ khuôn mặt nghiêm ngặt...';
 
     try {
-      const prompt = ADAPTER?.buildOutfitSwapRetryPrompt?.() ||
-        `The face changed. Regenerate with STRICTER face preservation. DO NOT ALTER FACE IN ANY WAY. Use EXACT facial features from the original model. Only change clothing. Single image only.`;
+      const prompt = ADAPTER?.buildOutfitSwapRetryPrompt?.(state.outfitRatio) ||
+        `The previous result was NOT correct. Regenerate with STRICT requirements:
+- Show FULL BODY from head to toe (do not crop)
+- Outfit must match Image 2 EXACTLY — copy every detail: neckline, sleeves, length, pattern, color, fabric
+- DO NOT ALTER FACE IN ANY WAY
+- Generate exactly 1 single FULL BODY photo. Aspect ratio ${state.outfitRatio || '3:4'}.`;
 
       await typeIntoChatInput(prompt);
       await sleep(300);
@@ -1803,7 +1816,27 @@ Be as detailed as possible. Emphasize the Vietnamese/Asian features. Just give m
     videoBtn.innerHTML = '⏳ Đang tạo video...';
 
     try {
-      if (SITE === 'flow') {
+      if (SITE === 'grok-imagine') {
+        // ═══ ON GROK IMAGINE PAGE — full video automation ═══
+        progressText.textContent = '🎬 Cấu hình video trên Grok Imagine...';
+        const builtPrompt = ADAPTER?.buildVideoPrompt?.(videoPrompt, state.selectedRatio) || videoPrompt;
+
+        if (ADAPTER?.generateVideo) {
+          const ok = await ADAPTER.generateVideo(state.videoImage.file, builtPrompt, {
+            ratio: state.selectedRatio || '9:16',
+            duration: '6s',
+            resolution: '720p',
+          });
+          if (ok) {
+            progressText.textContent = '⏳ Đã gửi! Video đang được tạo... kiểm tra kết quả trên trang.';
+          } else {
+            progressText.textContent = '⚠️ Không thể tự động hóa. Vui lòng tạo thủ công.';
+          }
+        } else {
+          progressText.textContent = '❌ Adapter grok-imagine chưa sẵn sàng.';
+        }
+
+      } else if (SITE === 'flow') {
         // ═══ ON FLOW PAGE — automate directly ═══
         await generateVideoOnFlow(videoPrompt, progressText);
 
@@ -1813,6 +1846,12 @@ Be as detailed as possible. Emphasize the Vietnamese/Asian features. Just give m
         window.open(`https://labs.google/fx/tools/flow`, '_blank');
         progressText.textContent = '✅ Đã mở Flow. Chuyển sang tab Flow → extension sẽ tự động hóa ở đó.';
 
+      } else if (state.videoPlatform === 'grok-imagine') {
+        // ═══ ON other site but user wants Grok Imagine — open new tab ═══
+        progressText.textContent = '🎬 Mở Grok Imagine...';
+        window.open('https://grok.com/imagine', '_blank');
+        progressText.textContent = '✅ Đã mở Grok Imagine. Chuyển sang tab đó → extension sẽ tự động hóa.';
+
       } else {
         // ═══ IN-CHAT video generation (Gemini/Grok) ═══
         progressText.textContent = 'Uploading ảnh...';
@@ -1820,16 +1859,57 @@ Be as detailed as possible. Emphasize the Vietnamese/Asian features. Just give m
         await sleep(1000);
 
         const prompt = ADAPTER?.buildVideoPrompt?.(videoPrompt, state.selectedRatio) ||
-          `Create a short video based on this image. Action: ${videoPrompt}. Keep the same person and appearance. Smooth, cinematic motion.`;
+          `Generate an actual video (not text). Create a short video clip based on this image.
+
+Action: ${videoPrompt}
+
+IMPORTANT:
+- Output must be a VIDEO FILE, not a text description
+- Do NOT describe or write a script — GENERATE the actual video
+- Keep the same person and appearance
+- Smooth cinematic motion, 5-8 seconds
+- If you cannot generate video, say "VIDEO_NOT_SUPPORTED"`;
 
         progressText.textContent = '🎬 Tạo video...';
         await typeIntoChatInput(prompt);
         await sleep(300);
         await clickSendButton();
 
-        await waitForGeminiResponse(300000); // Videos take longer
+        const result = await waitForGeminiResponse(300000); // Videos take longer
         await sleep(3000);
-        progressText.textContent = '✅ Video đã được tạo! Xem trong chat.';
+
+        // ── Validate response: check if AI returned text instead of video ──
+        // Grok supports video natively; Gemini may not
+        const responseText = extractLastResponseText();
+        const hasVideoElement = !!document.querySelector('video[src], video source, [data-testid*="video"]');
+
+        if (SITE === 'grok') {
+          // Grok supports video — check for video element
+          if (hasVideoElement) {
+            progressText.textContent = '✅ Video đã được tạo! Xem trong chat.';
+          } else {
+            // Grok might still be processing or returned text
+            progressText.textContent = '⏳ Video có thể đang xử lý. Kiểm tra phản hồi trong chat.';
+            console.log('[GBIG] Grok video: no <video> element found yet, response may still be loading.');
+          }
+        } else {
+          // Gemini — likely doesn't support video generation
+          const isTextOnly = responseText && (
+            responseText.includes('VIDEO_NOT_SUPPORTED') ||
+            responseText.includes('cannot generate video') ||
+            responseText.includes('can\'t generate video') ||
+            responseText.includes('unable to create video') ||
+            responseText.includes('not able to generate video') ||
+            (responseText.length > 200 && !hasVideoElement)
+          );
+
+          if (isTextOnly) {
+            progressText.textContent = '⚠️ Gemini chưa hỗ trợ tạo video. Hãy dùng Grok hoặc Veo 3 (Flow)!';
+            console.warn('[GBIG] ⚠️ Gemini returned text description, not actual video.');
+          } else {
+            progressText.textContent = '✅ Video đã được tạo! Xem trong chat.';
+          }
+        }
       }
     } catch (err) {
       progressText.textContent = `❌ Lỗi: ${err.message}`;

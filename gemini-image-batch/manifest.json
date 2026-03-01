@@ -13,7 +13,7 @@
     },
     {
       "matches": ["https://gemini.google.com/*", "https://grok.com/*", "https://labs.google/*"],
-      "js": ["adapters/gemini.js", "adapters/grok.js", "adapters/flow.js", "content.js"],
+      "js": ["adapters/gemini.js", "adapters/grok.js", "adapters/grok-imagine.js", "adapters/flow.js", "content.js"],
       "css": ["panel.css"],
       "run_at": "document_idle"
     }
