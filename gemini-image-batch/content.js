@@ -36,6 +36,7 @@
     outfitModelImage: null,     // { dataUrl, file }
     outfitClothesImage: null,   // { dataUrl, file }
     outfitRatio: '1:1',
+    outfitImageCount: 1,        // number of images to generate
     // Video
     videoImage: null,           // { dataUrl, file }
     videoPlatform: 'chat',      // 'chat' or 'flow'
@@ -204,12 +205,28 @@
               <div class="gbig-section">
                 <div class="gbig-section-label"><span class="num">3</span> Tùy chọn</div>
                 <div class="gbig-ratio-group">
+                  <button class="gbig-ratio-btn outfit-ratio" data-ratio="16:9">
+                    <div class="ratio-icon"></div> 16:9
+                  </button>
                   <button class="gbig-ratio-btn outfit-ratio" data-ratio="9:16">
                     <div class="ratio-icon"></div> 9:16
+                  </button>
+                  <button class="gbig-ratio-btn outfit-ratio" data-ratio="3:4">
+                    <div class="ratio-icon"></div> 3:4
+                  </button>
+                  <button class="gbig-ratio-btn outfit-ratio" data-ratio="4:3">
+                    <div class="ratio-icon"></div> 4:3
                   </button>
                   <button class="gbig-ratio-btn outfit-ratio active" data-ratio="1:1">
                     <div class="ratio-icon"></div> 1:1
                   </button>
+                </div>
+                <div class="gbig-count-row" style="margin-top:8px">
+                  <div class="gbig-toggle-info">
+                    <span class="gbig-toggle-icon">🖼️</span>
+                    <span class="gbig-toggle-label">Số lượng ảnh</span>
+                  </div>
+                  <input type="number" class="gbig-count-input" id="gbig-outfit-image-count" value="1" min="1" max="20" />
                 </div>
               </div>
 
@@ -310,9 +327,9 @@
   // ── Bind Events ──
   function bindEvents() {
     // Aspect ratio
-    $$('.gbig-ratio-btn').forEach(btn => {
+    $$('.gbig-ratio-btn:not(.outfit-ratio)').forEach(btn => {
       btn.addEventListener('click', () => {
-        $$('.gbig-ratio-btn').forEach(b => b.classList.remove('active'));
+        $$('.gbig-ratio-btn:not(.outfit-ratio)').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
         state.selectedRatio = btn.dataset.ratio;
       });
@@ -411,12 +428,27 @@
 
     // Outfit ratio
     $$('.outfit-ratio').forEach(btn => {
-      btn.addEventListener('click', () => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation(); // prevent batch handler from catching this
         $$('.outfit-ratio').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
         state.outfitRatio = btn.dataset.ratio;
+        console.log('[GBIG] Outfit ratio set to:', state.outfitRatio);
       });
     });
+
+    // Outfit image count
+    const outfitCountInput = $('#gbig-outfit-image-count');
+    if (outfitCountInput) {
+      outfitCountInput.addEventListener('input', (e) => {
+        const val = parseInt(e.target.value, 10);
+        state.outfitImageCount = (val && val >= 1) ? val : 1;
+      });
+      outfitCountInput.addEventListener('blur', (e) => {
+        if (!e.target.value || parseInt(e.target.value) < 1) e.target.value = 1;
+        state.outfitImageCount = parseInt(e.target.value, 10) || 1;
+      });
+    }
 
     // Outfit swap buttons
     const swapBtn = $('#gbig-outfit-swap-btn');
@@ -593,7 +625,7 @@
     }
 
     // Final fallback: any contenteditable or textarea
-    const fallback = document.querySelector('[contenteditable="true"]:not(#gbig-panel *)') 
+    const fallback = document.querySelector('[contenteditable="true"]:not(#gbig-panel *)')
       || document.querySelector('textarea:not(#gbig-panel *)');
     if (fallback) {
       return { type: fallback.tagName === 'TEXTAREA' ? 'textarea' : 'rich', el: fallback };
@@ -860,10 +892,15 @@
     return all.map(img => img.src);
   }
 
-  // ── Extract text from last Gemini response in DOM ──
+  // ── Extract text from last AI response in DOM (works on Gemini + Grok) ──
   function extractLastResponseText() {
-    // Try various Gemini response selectors
+    // Selectors for various sites — ordered most specific first
     const selectors = [
+      // Grok selectors
+      '[data-testid="message-content"]',
+      '.message-content',
+      '.response-text',
+      // Gemini selectors
       'message-content.model-response-text',
       '.model-response-text',
       '.response-container',
@@ -873,13 +910,17 @@
     for (const sel of selectors) {
       const els = $$(sel);
       if (els.length > 0) {
+        // Get the LAST response (most recent)
         const text = els[els.length - 1].innerText?.trim();
-        if (text && text.length > 50) return text;
+        if (text && text.length > 50) {
+          console.log('[GBIG] extractLastResponseText found via:', sel, 'length:', text.length);
+          return text;
+        }
       }
     }
     // Generic fallback: find last element with substantial text in main
     const main = document.querySelector('main') || document.body;
-    const allBlocks = main.querySelectorAll('div, p, span');
+    const allBlocks = main.querySelectorAll('div, p, span, article');
     let best = '';
     for (const el of allBlocks) {
       if (el.closest('#gbig-panel') || el.closest('#gbig-lightbox')) continue;
@@ -887,6 +928,8 @@
       const t = el.innerText?.trim() || '';
       if (t.length > 100 && t.length > best.length) best = t;
     }
+    if (best) console.log('[GBIG] extractLastResponseText found via generic fallback, length:', best.length);
+    else console.warn('[GBIG] extractLastResponseText: NO text found in DOM');
     return best;
   }
 
@@ -1040,8 +1083,8 @@
     if (state.sharedContext && state.sharedContext.trim()) {
       const ctx = transformPrompt(state.sharedContext.trim());
       // Only add if not already mentioned in the user's prompt
-      if (!transformed.toLowerCase().includes(ctx.toLowerCase()) 
-          && !transformed.toLowerCase().includes(state.sharedContext.trim().toLowerCase())) {
+      if (!transformed.toLowerCase().includes(ctx.toLowerCase())
+        && !transformed.toLowerCase().includes(state.sharedContext.trim().toLowerCase())) {
         sentence += `, at ${ctx}`;
       }
     }
@@ -1136,7 +1179,7 @@
   function isImageAccessLost(responseText) {
     if (!responseText) return false;
     const lower = responseText.toLowerCase();
-    return lower.includes('don\'t seem to have access') 
+    return lower.includes('don\'t seem to have access')
       || lower.includes('have access to that content')
       || lower.includes('you can try again');
   }
@@ -1547,7 +1590,191 @@ Be as detailed as possible. Emphasize the Vietnamese/Asian features. Just give m
 
   // ══════════════════════════════════════════════════════
   // OUTFIT SWAP — Swap clothing between two images
+  // Site-aware upload: handles Gemini, Grok, and Grok Imagine
   // ══════════════════════════════════════════════════════
+
+  async function uploadOutfitImage(imageObj) {
+    console.log('[GBIG] uploadOutfitImage: SITE =', SITE, 'file:', imageObj.file?.name);
+
+    // Convert dataUrl to File for consistent handling
+    const resp = await fetch(imageObj.dataUrl);
+    const blob = await resp.blob();
+    const fileName = imageObj.file?.name || 'image.png';
+    const file = new File([blob], fileName, { type: blob.type });
+
+    if (SITE === 'grok' || SITE === 'grok-imagine') {
+      // ═══ GROK / GROK IMAGINE: Use Attach button + file input ═══
+      await uploadOutfitImageGrok(file);
+    } else {
+      // ═══ GEMINI / OTHER: Use existing uploadReferenceImage logic ═══
+      const savedRef = state.referenceImage;
+      state.referenceImage = imageObj;
+      try {
+        await uploadReferenceImage();
+      } finally {
+        state.referenceImage = savedRef;
+      }
+    }
+  }
+
+  async function uploadOutfitImageGrok(file) {
+    console.log('[GBIG] uploadOutfitImageGrok: Starting...');
+
+    // Strategy 0: Try existing file inputs first (Grok may have hidden ones)
+    const existingInputs = Array.from(document.querySelectorAll('input[type="file"]'))
+      .filter(inp => !inp.closest('#gbig-panel') && !inp.id?.startsWith('gbig-'));
+
+    if (existingInputs.length > 0) {
+      console.log('[GBIG] Grok: Found', existingInputs.length, 'existing file inputs');
+      for (const inp of existingInputs) {
+        try {
+          const dt = new DataTransfer();
+          dt.items.add(file);
+          inp.files = dt.files;
+          inp.dispatchEvent(new Event('change', { bubbles: true }));
+          console.log('[GBIG] ✅ Grok: File set on existing input');
+          await sleep(2500);
+          return;
+        } catch (e) {
+          console.warn('[GBIG] Grok: Failed on existing input:', e);
+        }
+      }
+    }
+
+    // Strategy 1: Click Grok's Attach/Upload button to trigger file input
+    const attachSelectors = [
+      'button[aria-label*="Attach" i]',
+      'button[aria-label*="Đính kèm" i]',
+      'button[aria-label*="upload" i]',
+      'button[aria-label*="Upload" i]',
+      'button[aria-label*="Tải lên" i]',
+      'button[data-testid*="attach"]',
+      'button[data-testid*="upload"]',
+      'button[data-testid*="file"]',
+    ];
+
+    let attachBtn = null;
+    for (const sel of attachSelectors) {
+      const btn = document.querySelector(sel);
+      if (btn && !btn.closest('#gbig-panel')) {
+        attachBtn = btn;
+        console.log('[GBIG] Grok: Found attach button:', btn.getAttribute('aria-label'), sel);
+        break;
+      }
+    }
+
+    if (attachBtn) {
+      // Start MutationObserver BEFORE clicking to catch new file inputs
+      const fileInputPromise = new Promise(resolve => {
+        let resolved = false;
+        const findInputs = () => Array.from(document.querySelectorAll('input[type="file"]'))
+          .filter(inp => !inp.closest('#gbig-panel') && !inp.id?.startsWith('gbig-'));
+
+        const existing = findInputs();
+        if (existing.length > 0) { resolve(existing[0]); return; }
+
+        const observer = new MutationObserver(() => {
+          if (resolved) return;
+          const inputs = findInputs();
+          if (inputs.length > 0) {
+            resolved = true;
+            observer.disconnect();
+            resolve(inputs[0]);
+          }
+        });
+        observer.observe(document.body, { childList: true, subtree: true });
+        setTimeout(() => { if (!resolved) { resolved = true; observer.disconnect(); resolve(null); } }, 5000);
+      });
+
+      // Click the attach button
+      attachBtn.click();
+      console.log('[GBIG] Grok: Clicked attach button');
+      await sleep(800);
+
+      // Check for dropdown menu (Grok might show options like "Upload file")
+      const menuItems = document.querySelectorAll('[role="menuitem"], [role="option"]');
+      if (menuItems.length > 0) {
+        console.log('[GBIG] Grok: Found', menuItems.length, 'menu items');
+        for (const item of menuItems) {
+          const text = (item.textContent || '').toLowerCase();
+          if (text.includes('upload') || text.includes('tải') || text.includes('file') ||
+            text.includes('tệp') || text.includes('hình ảnh') || text.includes('image') ||
+            text.includes('máy tính') || text.includes('computer')) {
+            item.click();
+            console.log('[GBIG] Grok: Clicked menu item:', item.textContent?.trim());
+            await sleep(800);
+            break;
+          }
+        }
+      }
+
+      // Wait for file input from MutationObserver
+      const fileInput = await fileInputPromise;
+      if (fileInput) {
+        try {
+          const dt = new DataTransfer();
+          dt.items.add(file);
+          fileInput.files = dt.files;
+          fileInput.dispatchEvent(new Event('change', { bubbles: true }));
+          fileInput.dispatchEvent(new Event('input', { bubbles: true }));
+          console.log('[GBIG] ✅ Grok: File uploaded via input after attach click');
+          await sleep(2500);
+          return;
+        } catch (e) {
+          console.warn('[GBIG] Grok: Failed to set file after attach:', e);
+        }
+      } else {
+        console.warn('[GBIG] Grok: No file input appeared after attach click');
+      }
+    } else {
+      console.warn('[GBIG] Grok: No attach button found');
+      // Log available buttons for debugging
+      document.querySelectorAll('button').forEach((btn, i) => {
+        if (btn.closest('#gbig-panel')) return;
+        const label = btn.getAttribute('aria-label');
+        if (label) console.log(`[GBIG] btn[${i}]: aria-label="${label}"`);
+      });
+    }
+
+    // Strategy 2: Paste into editor
+    console.log('[GBIG] Grok: Trying paste fallback...');
+    const editor = document.querySelector('textarea[placeholder]')
+      || document.querySelector('div[contenteditable="true"][role="textbox"]')
+      || document.querySelector('div[contenteditable="true"]');
+
+    if (editor) {
+      editor.focus();
+      await sleep(300);
+      const dt = new DataTransfer();
+      dt.items.add(file);
+      editor.dispatchEvent(new ClipboardEvent('paste', {
+        bubbles: true, cancelable: true, clipboardData: dt,
+      }));
+      console.log('[GBIG] Grok: Paste event dispatched');
+      await sleep(2500);
+      return;
+    }
+
+    // Strategy 3: Drag and drop
+    console.log('[GBIG] Grok: Trying drag-drop fallback...');
+    const dropTarget = document.querySelector('textarea') || document.querySelector('main');
+    if (dropTarget) {
+      const dtDrag = new DataTransfer();
+      dtDrag.items.add(file);
+      for (const evtType of ['dragenter', 'dragover', 'drop']) {
+        dropTarget.dispatchEvent(new DragEvent(evtType, {
+          bubbles: true, cancelable: true, dataTransfer: dtDrag,
+        }));
+        await sleep(200);
+      }
+      console.log('[GBIG] Grok: Drag-drop dispatched');
+      await sleep(2500);
+      return;
+    }
+
+    console.warn('[GBIG] ❌ Grok: ALL upload strategies failed');
+  }
+
   async function startOutfitSwap() {
     if (!state.outfitModelImage || !state.outfitClothesImage) {
       alert('Vui lòng upload cả ảnh người mẫu VÀ ảnh trang phục!');
@@ -1557,74 +1784,106 @@ Be as detailed as possible. Emphasize the Vietnamese/Asian features. Just give m
     const swapBtn = $('#gbig-outfit-swap-btn');
     const retryBtn = $('#gbig-outfit-retry-btn');
     const progressText = $('#gbig-outfit-progress-text');
+    const totalImages = state.outfitImageCount || 1;
     swapBtn.disabled = true;
     swapBtn.innerHTML = '⏳ Đang xử lý...';
-    progressText.textContent = 'Uploading ảnh...';
+    state.shouldStop = false;
+    seenImageUrls.clear();
+    console.log('[GBIG] Outfit swap starting. Ratio:', state.outfitRatio, 'Count:', totalImages);
+
+    const resultsBody = $('#gbig-results-body');
+    resultsBody.innerHTML = '';
+    let allImages = [];
 
     try {
-      // Upload both images
-      await uploadImageFile(state.outfitModelImage.file);
-      await sleep(500);
-      await uploadImageFile(state.outfitClothesImage.file);
-      await sleep(1000);
+      for (let round = 0; round < totalImages; round++) {
+        if (state.shouldStop) break;
 
-      // Get outfit swap prompt from adapter or default
-      progressText.textContent = 'Tạo ảnh mới...';
-      const prompt = ADAPTER?.buildOutfitSwapPrompt?.(state.outfitRatio) || 
-        `Look at the two images. Image 1 is the model. Image 2 shows the outfit.
+        progressText.textContent = `📷 Upload ảnh... (${round + 1}/${totalImages})`;
 
-TASK: Generate a FULL BODY photo (head to toe) of the SAME person from Image 1 wearing the EXACT outfit from Image 2.
+        // Read ratio directly from DOM
+        const activeRatioBtn = document.querySelector('.outfit-ratio.active');
+        const outfitRatio = activeRatioBtn?.dataset?.ratio || state.outfitRatio || '3:4';
 
-OUTFIT: Copy EVERY detail — neckline, sleeves, length, pattern, color, fabric, accessories. Do NOT simplify or modify any design element.
-PERSON: DO NOT ALTER FACE. Keep exact same face, hair, body. FULL BODY framing.
-Aspect ratio ${state.outfitRatio || '3:4'}. Single image only.`;
+        // ═══ Direct 2-image upload flow (works on ALL sites) ═══
+        console.log('[GBIG] Outfit: Uploading model image...');
+        await uploadOutfitImage(state.outfitModelImage);
+        await sleep(800);
 
-      await typeIntoChatInput(prompt);
-      await sleep(300);
-      await clickSendButton();
+        console.log('[GBIG] Outfit: Uploading clothes image...');
+        await uploadOutfitImage(state.outfitClothesImage);
+        await sleep(1000);
 
-      const result = await waitForGeminiResponse(180000);
-      await sleep(2000);
+        console.log('[GBIG] Outfit ratio:', outfitRatio);
+        progressText.textContent = `🎨 Tạo ảnh ${round + 1}/${totalImages}...`;
+        const prompt = ADAPTER?.buildOutfitSwapPrompt?.(outfitRatio) ||
+          `Look at the two images I uploaded. Image 1 is the person/model. Image 2 shows the outfit/clothing.
 
-      // Get images
-      let images = (result.images || []).filter(u => !seenImageUrls.has(u));
-      if (images.length === 0) {
-        images = scrapeDomImages().filter(u => !seenImageUrls.has(u));
-      }
-      images.forEach(u => seenImageUrls.add(u));
+TASK: Generate a FULL BODY photo (head to toe) of the EXACT SAME person from Image 1, wearing the EXACT outfit from Image 2.
 
-      // Show results
-      if (images.length > 0) {
-        const resultsBody = $('#gbig-results-body');
-        resultsBody.innerHTML = images.map(url => `
-          <div class="gbig-result-item">
-            <img src="${url}" class="gbig-result-img" data-url="${url}" />
-            <button class="gbig-save-single-btn" data-url="${url}">💾</button>
-          </div>
-        `).join('');
+CRITICAL — OUTFIT MUST NOT BE DISTORTED OR MODIFIED:
+- Copy the outfit from Image 2 PIXEL-PERFECTLY — same proportions, same silhouette, same construction
+- Do NOT stretch, shrink, redesign, simplify, or reinterpret ANY part of the outfit
 
-        // Click to enlarge
-        $$('.gbig-result-img', resultsBody).forEach(img => {
-          img.addEventListener('click', () => {
-            const lb = $('#gbig-lightbox');
-            lb.querySelector('img').src = img.dataset.url;
-            lb.classList.add('show');
+PERSON REQUIREMENTS:
+- DO NOT ALTER THE FACE — keep exact same facial features, identity
+- FULL BODY framing — show the entire person from head to shoes
+
+Aspect ratio ${outfitRatio}. Generate exactly 1 single image only.`;
+
+        await typeIntoChatInput(prompt);
+        await sleep(300);
+        await clickSendButton();
+
+        const result = await waitForGeminiResponse(180000);
+        await sleep(2000);
+
+        // Get images
+        let images = (result.images || []).filter(u => !seenImageUrls.has(u));
+        if (images.length === 0) {
+          images = scrapeDomImages().filter(u => !seenImageUrls.has(u));
+        }
+        images.forEach(u => seenImageUrls.add(u));
+        allImages.push(...images);
+
+        // Append results to UI
+        if (images.length > 0) {
+          const html = images.map(url => `
+            <div class="gbig-result-item">
+              <img src="${url}" class="gbig-result-img" data-url="${url}" />
+              <button class="gbig-save-single-btn" data-url="${url}">💾</button>
+            </div>
+          `).join('');
+          resultsBody.innerHTML += html;
+
+          // Rebind click events
+          $$('.gbig-result-img', resultsBody).forEach(img => {
+            img.onclick = () => {
+              const lb = $('#gbig-lightbox');
+              lb.querySelector('img').src = img.dataset.url;
+              lb.classList.add('show');
+            };
           });
-        });
+          $$('.gbig-save-single-btn', resultsBody).forEach(btn => {
+            btn.onclick = () => downloadImage(btn.dataset.url);
+          });
 
-        // Single save buttons
-        $$('.gbig-save-single-btn', resultsBody).forEach(btn => {
-          btn.addEventListener('click', () => downloadImage(btn.dataset.url));
-        });
-
-        // Auto-save if enabled
-        if (state.autoSave) {
-          for (const url of images) {
-            await downloadImage(url);
+          // Auto-save if enabled
+          if (state.autoSave) {
+            for (const url of images) await downloadImage(url);
           }
         }
 
-        progressText.textContent = `✅ Hoàn tất! ${images.length} ảnh`;
+        progressText.textContent = `✅ ${round + 1}/${totalImages} hoàn tất (${allImages.length} ảnh)`;
+
+        // Pause between rounds
+        if (round < totalImages - 1 && !state.shouldStop) {
+          await sleep(1500);
+        }
+      }
+
+      if (allImages.length > 0) {
+        progressText.textContent = `✅ Hoàn tất! ${allImages.length} ảnh`;
         retryBtn.style.display = 'block';
       } else {
         progressText.textContent = '❌ Không tìm thấy ảnh. Thử lại?';
@@ -1696,23 +1955,279 @@ Aspect ratio ${state.outfitRatio || '3:4'}. Single image only.`;
     retryBtn.disabled = false;
   }
 
+  // ── Helper: set file on a file input element ──
+  async function setFileOnInput(inp, file) {
+    try {
+      const dt = new DataTransfer();
+      dt.items.add(file);
+      inp.files = dt.files;
+      inp.dispatchEvent(new Event('change', { bubbles: true }));
+      inp.dispatchEvent(new Event('input', { bubbles: true }));
+      console.log('[GBIG] ✅ File set on input:', inp.id || inp.name || inp.className || '(anonymous)');
+      await sleep(2500);
+      return true;
+    } catch (e) {
+      console.warn('[GBIG] Failed to set file on input:', e);
+      return false;
+    }
+  }
+
+  // ── Helper: find non-extension file inputs on the page ──
+  function findPageFileInputs() {
+    return Array.from(document.querySelectorAll('input[type="file"]'))
+      .filter(inp => !inp.closest('#gbig-panel') && !inp.id?.startsWith('gbig-'));
+  }
+
+  // ── Helper: wait for a new file input to appear via MutationObserver ──
+  function waitForFileInput(timeoutMs = 5000) {
+    return new Promise(resolve => {
+      const existing = findPageFileInputs();
+      if (existing.length > 0) {
+        resolve(existing[0]);
+        return;
+      }
+
+      let resolved = false;
+      const observer = new MutationObserver((mutations) => {
+        if (resolved) return;
+        const inputs = findPageFileInputs();
+        if (inputs.length > 0) {
+          resolved = true;
+          observer.disconnect();
+          resolve(inputs[0]);
+        }
+      });
+
+      observer.observe(document.body, { childList: true, subtree: true });
+
+      setTimeout(() => {
+        if (!resolved) {
+          resolved = true;
+          observer.disconnect();
+          resolve(null);
+        }
+      }, timeoutMs);
+    });
+  }
+
   // Upload a single file to the chat (helper for outfit/video)
+  // Comprehensive multi-strategy approach with detailed logging
   async function uploadImageFile(file) {
-    const dt = new DataTransfer();
-    dt.items.add(file);
-    
-    // Find file input and set files
-    const fileInputs = $$('input[type="file"]');
-    for (const input of fileInputs) {
-      if (input.id?.startsWith('gbig-')) continue; // skip our own inputs
-      input.files = dt.files;
-      input.dispatchEvent(new Event('change', { bubbles: true }));
-      await sleep(500);
+    console.log('[GBIG] uploadImageFile: Starting upload for:', file.name, file.type, file.size, 'bytes');
+
+    // ══════════════════════════════════════════════
+    // Strategy 0: Check for existing file inputs first
+    // Some sites keep a hidden file input in the DOM
+    // ══════════════════════════════════════════════
+    const existingInputs = findPageFileInputs();
+    console.log('[GBIG] uploadImageFile: Found', existingInputs.length, 'existing file inputs on page');
+
+    if (existingInputs.length > 0) {
+      for (const inp of existingInputs) {
+        const ok = await setFileOnInput(inp, file);
+        if (ok) return;
+      }
+    }
+
+    // ══════════════════════════════════════════════
+    // Strategy 1: Find and click the upload/attachment button
+    // Then use MutationObserver to catch the file input
+    // ══════════════════════════════════════════════
+    console.log('[GBIG] uploadImageFile: Trying to find upload button...');
+
+    // Try many possible selectors for the upload button
+    const uploadBtnSelectors = [
+      'button.upload-card-button',
+      'button[aria-label*="upload" i]',
+      'button[aria-label*="Tải" i]',
+      'button[aria-label*="attach" i]',
+      'button[aria-label*="Đính kèm" i]',
+      'button[aria-label*="thêm tệp" i]',
+      'button[aria-label*="Thêm" i]',
+      'button[aria-label*="Add" i]',
+      'button[aria-label*="Insert" i]',
+      'button[data-testid*="upload"]',
+      'button[data-testid*="attach"]',
+      'button[data-testid*="file"]',
+      'button[jsname]',  // Gemini uses jsname attributes
+    ];
+
+    let uploadBtn = null;
+    for (const sel of uploadBtnSelectors) {
+      try {
+        const candidates = document.querySelectorAll(sel);
+        for (const btn of candidates) {
+          if (btn.closest('#gbig-panel')) continue;
+          // For generic selectors like button[jsname], check if it looks like an upload button
+          if (sel === 'button[jsname]') {
+            const svg = btn.querySelector('svg, mat-icon, .material-icons, i');
+            const ariaLabel = (btn.getAttribute('aria-label') || '').toLowerCase();
+            const title = (btn.getAttribute('title') || '').toLowerCase();
+            const isUploadLike = ariaLabel.includes('upload') || ariaLabel.includes('attach') ||
+              ariaLabel.includes('file') || ariaLabel.includes('tải') ||
+              ariaLabel.includes('thêm') || ariaLabel.includes('add') ||
+              title.includes('upload') || title.includes('attach') ||
+              title.includes('file') || title.includes('add');
+            if (!isUploadLike) continue;
+          }
+          uploadBtn = btn;
+          break;
+        }
+      } catch { /* invalid selector, skip */ }
+      if (uploadBtn) break;
+    }
+
+    // Also try: find buttons near the input area by proximity
+    if (!uploadBtn) {
+      const inputArea = document.querySelector('.input-area-container, .input-area, [class*="input-area"], [class*="prompt-area"], [class*="chat-input"]');
+      if (inputArea) {
+        const buttons = inputArea.querySelectorAll('button');
+        for (const btn of buttons) {
+          if (btn.closest('#gbig-panel')) continue;
+          const ariaLabel = (btn.getAttribute('aria-label') || '').toLowerCase();
+          const title = (btn.getAttribute('title') || '').toLowerCase();
+          const text = (btn.textContent || '').toLowerCase().trim();
+          if (ariaLabel.includes('upload') || ariaLabel.includes('attach') || ariaLabel.includes('file') ||
+            ariaLabel.includes('add') || ariaLabel.includes('tải') || ariaLabel.includes('thêm') ||
+            title.includes('upload') || title.includes('attach') ||
+            text === '+' || text === '📎') {
+            uploadBtn = btn;
+            console.log('[GBIG] Found upload button near input area:', ariaLabel || title || text);
+            break;
+          }
+        }
+      }
+    }
+
+    if (uploadBtn) {
+      console.log('[GBIG] uploadImageFile: Found upload button, clicking...',
+        'ariaLabel:', uploadBtn.getAttribute('aria-label'),
+        'text:', uploadBtn.textContent?.trim()?.slice(0, 50));
+
+      // Start MutationObserver BEFORE clicking
+      const fileInputPromise = waitForFileInput(5000);
+
+      uploadBtn.click();
+      await sleep(1500);
+
+      // After clicking, look for a menu/dropdown that appeared
+      const menuItems = document.querySelectorAll(
+        '[role="menuitem"], [role="option"], .mat-mdc-menu-item, ' +
+        '[role="listbox"] [role="option"], .mdc-list-item, ' +
+        '[class*="menu-item"], [class*="dropdown-item"]'
+      );
+      console.log('[GBIG] uploadImageFile: Found', menuItems.length, 'menu items after click');
+
+      for (const item of menuItems) {
+        if (item.closest('#gbig-panel')) continue;
+        const text = (item.textContent || '').toLowerCase();
+        const label = (item.getAttribute('aria-label') || '').toLowerCase();
+        if (text.includes('upload') || text.includes('tải') || text.includes('file') || text.includes('tệp') ||
+          text.includes('máy tính') || text.includes('computer') ||
+          label.includes('upload') || label.includes('file')) {
+          item.click();
+          console.log('[GBIG] uploadImageFile: Clicked menu item:', item.textContent?.trim());
+          await sleep(1000);
+          break;
+        }
+      }
+
+      // Wait for file input from MutationObserver
+      const newInput = await fileInputPromise;
+      if (newInput) {
+        console.log('[GBIG] uploadImageFile: MutationObserver found file input!');
+        const ok = await setFileOnInput(newInput, file);
+        if (ok) return;
+      } else {
+        console.log('[GBIG] uploadImageFile: MutationObserver did not find file input');
+      }
+
+      // Check for inputs again after all the clicking
+      const inputsAfterClick = findPageFileInputs();
+      console.log('[GBIG] uploadImageFile: After clicking, found', inputsAfterClick.length, 'file inputs');
+      for (const inp of inputsAfterClick) {
+        const ok = await setFileOnInput(inp, file);
+        if (ok) return;
+      }
+    } else {
+      console.warn('[GBIG] uploadImageFile: No upload button found on page');
+      // Log all buttons for debugging
+      const allBtns = document.querySelectorAll('button');
+      console.log('[GBIG] DEBUG: All buttons on page (' + allBtns.length + '):');
+      allBtns.forEach((btn, i) => {
+        if (btn.closest('#gbig-panel')) return;
+        const info = {
+          ariaLabel: btn.getAttribute('aria-label'),
+          title: btn.getAttribute('title'),
+          text: btn.textContent?.trim()?.slice(0, 40),
+          jsname: btn.getAttribute('jsname'),
+          class: btn.className?.slice?.(0, 60),
+        };
+        if (info.ariaLabel || info.title || info.jsname) {
+          console.log(`[GBIG] btn[${i}]:`, JSON.stringify(info));
+        }
+      });
+    }
+
+    // ══════════════════════════════════════════════
+    // Strategy 2: Paste into editor
+    // ══════════════════════════════════════════════
+    console.log('[GBIG] uploadImageFile: Trying paste into editor...');
+    const editor = document.querySelector('.ql-editor')
+      || document.querySelector('[contenteditable="true"][role="textbox"]')
+      || document.querySelector('[contenteditable="true"]');
+
+    if (editor) {
+      editor.focus();
+      await sleep(300);
+
+      // Create a proper clipboard item
+      const dt = new DataTransfer();
+      dt.items.add(file);
+      const pasteEvt = new ClipboardEvent('paste', {
+        bubbles: true,
+        cancelable: true,
+        clipboardData: dt,
+      });
+      editor.dispatchEvent(pasteEvt);
+      console.log('[GBIG] uploadImageFile: Dispatched paste event');
+      await sleep(2500);
+
+      // Check if an image appeared in the input area (verify paste worked)
+      const imgInEditor = editor.querySelector('img') || editor.closest('.input-area-container')?.querySelector('img[src*="blob:"]');
+      if (imgInEditor) {
+        console.log('[GBIG] ✅ uploadImageFile: Paste appears successful (image found in editor)');
+        return;
+      }
+      console.log('[GBIG] uploadImageFile: Paste dispatched but no image detected in editor');
+    }
+
+    // ══════════════════════════════════════════════
+    // Strategy 3: Drag-and-drop onto the input area
+    // ══════════════════════════════════════════════
+    console.log('[GBIG] uploadImageFile: Trying drag-and-drop...');
+    const dropTarget = document.querySelector('.ql-editor')
+      || document.querySelector('[contenteditable="true"]')
+      || document.querySelector('.input-area')
+      || document.querySelector('main');
+
+    if (dropTarget) {
+      const dtDrag = new DataTransfer();
+      dtDrag.items.add(file);
+      for (const evtType of ['dragenter', 'dragover', 'drop']) {
+        dropTarget.dispatchEvent(new DragEvent(evtType, {
+          bubbles: true,
+          cancelable: true,
+          dataTransfer: dtDrag,
+        }));
+        await sleep(200);
+      }
+      console.log('[GBIG] uploadImageFile: Drag-and-drop dispatched');
+      await sleep(2500);
       return;
     }
 
-    // Fallback: same as uploadReferenceImage
-    await uploadReferenceImage();
+    console.warn('[GBIG] ❌ uploadImageFile: ALL upload strategies failed. Check console logs above for debugging info.');
   }
 
   // ══════════════════════════════════════════════════════
@@ -1979,7 +2494,7 @@ IMPORTANT:
     if (!promptEntered) {
       // Fallback: find contenteditable div manually
       const promptInput = document.querySelector('div[role="textbox"]') ||
-                          document.querySelector('div[contenteditable="true"]');
+        document.querySelector('div[contenteditable="true"]');
       if (promptInput) {
         promptInput.focus();
         promptInput.textContent = '';
