@@ -57,48 +57,22 @@ Be as detailed as possible. Emphasize the Vietnamese/Asian features. Just give m
     return `a young Vietnamese woman from the uploaded image`;
   },
 
-  // ── Grok Outfit Swap: direct 2-image reference (proven to work) ──
+  // ── Grok Outfit Swap: virtual try-on from 2 reference images ──
   buildOutfitSwapPrompt(ratio) {
-    return `Look at the two images I uploaded. Image 1 is the person/model. Image 2 shows the outfit/clothing.
+    return `Virtual try-on: Combine these 2 images into 1 fashion photo.
+- Person/face/body → take from Image 1
+- Outfit/clothing → take from Image 2
 
-TASK: Generate a FULL BODY photo (head to toe) of the EXACT SAME person from Image 1, wearing the EXACT outfit from Image 2.
-
-CRITICAL — OUTFIT MUST NOT BE DISTORTED OR MODIFIED:
-- Copy the outfit from Image 2 PIXEL-PERFECTLY — same proportions, same silhouette, same construction
-- Neckline style, collar shape — EXACT match
-- Sleeve type, length, and fit — EXACT match
-- Overall garment length (mini/midi/maxi/full) — EXACT match
-- Pattern, print, color, fabric texture — EXACT match, do NOT change scale or orientation of patterns
-- All buttons, zippers, belts, pockets, accessories — EXACT match
-- Layering order (if any) — EXACT match
-- Do NOT stretch, shrink, redesign, simplify, or reinterpret ANY part of the outfit
-- The clothing fit should look natural on the person's body WITHOUT altering the garment's original design
-- If the outfit is loose/oversized in Image 2, it must remain loose/oversized — do NOT make it fitted
-- If the outfit is fitted/tight in Image 2, it must remain fitted/tight — do NOT make it loose
-
-PERSON REQUIREMENTS:
-- DO NOT ALTER THE FACE — keep exact same facial features, identity
-- Same body proportions, skin tone, hair from Image 1
-- FULL BODY framing — show the entire person from head to shoes
-
-SETTINGS: Professional fashion photography, well-lit, clean background. Aspect ratio ${ratio || '3:4'}. Generate exactly 1 single image only.`;
+Keep the same face as Image 1. Keep the exact outfit design, pattern, color, fabric from Image 2.
+Full body, standing pose, fashion photography.
+Aspect ratio ${ratio || '9:16'}. Generate 1 image.`;
   },
 
   buildOutfitSwapRetryPrompt(ratio) {
-    return `The previous result was NOT correct. The outfit was DISTORTED or MODIFIED. Please regenerate with these STRICT requirements:
-
-OUTFIT FIX — DO NOT DISTORT:
-- The outfit must be an EXACT COPY from Image 2 — same proportions, same silhouette, same construction
-- Do NOT stretch, shrink, redesign, or reinterpret the clothing in any way
-- Copy every detail: neckline, sleeves, length, pattern, color, fabric, fit, accessories
-- The garment shape and design must look IDENTICAL to Image 2
-
-PERSON FIX:
-- Show FULL BODY from head to toe (do not crop)
-- DO NOT ALTER FACE IN ANY WAY — use EXACT facial features from Image 1
-- Maintain identity consistency — same eyes, nose, lips, face shape, skin tone
-
-Generate exactly 1 single FULL BODY fashion photo. Aspect ratio ${ratio || '3:4'}.`;
+    return `Try again. Combine the 2 uploaded images into 1 photo:
+- Face and body from Image 1
+- Outfit details (pattern, color, design) from Image 2
+Full body standing pose. Aspect ratio ${ratio || '9:16'}. Generate 1 image.`;
   },
 
   // Grok supports image-to-video natively

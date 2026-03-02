@@ -389,6 +389,28 @@
   border-color: #6366f1;
   background-color: rgba(99, 102, 241, 0.08);
 }
+.gbig-text-input {
+  flex: 1;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1.5px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.06);
+  color: #e2e8f0;
+  font-family: 'Inter', sans-serif;
+  font-size: 12px;
+  outline: none;
+  transition: all 0.2s ease;
+  min-width: 0;
+}
+.gbig-text-input::placeholder {
+  color: #475569;
+  font-size: 11px;
+}
+.gbig-text-input:hover,
+.gbig-text-input:focus {
+  border-color: #6366f1;
+  background-color: rgba(99, 102, 241, 0.08);
+}
 
 /* ── Prompt List ── */
 .gbig-prompt-input-row {

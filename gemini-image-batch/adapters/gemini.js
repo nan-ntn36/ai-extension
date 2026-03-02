@@ -49,29 +49,37 @@ const GeminiAdapter = {
     return `Generate a photo of this exact same person in a professional studio portrait. Aspect ratio ${ratio}. Single image only. Keep the exact same face, hair, and body.`;
   },
 
-  buildOutfitSwapPrompt(ratio) {
-    return `Look at the two images I uploaded. Image 1 is the REAL person. Image 2 shows the outfit.
-
-TASK: Put the outfit from Image 2 onto the REAL person in Image 1.
-
-CRITICAL RULES:
-1. The person in the result MUST be the EXACT SAME REAL person from Image 1 — NOT a new person, NOT a recreation, NOT an idealized version. Use their ACTUAL face, ACTUAL body, ACTUAL skin, ACTUAL hair exactly as they appear in the photo.
-2. Preserve ALL natural features of the real person — including skin texture, moles, wrinkles, asymmetries, blemishes. Do NOT beautify, smooth, or idealize.
-3. The outfit must match Image 2 exactly — same design, color, pattern, fabric, fit.
-4. The result should look like a real photograph of THIS specific real person wearing that outfit.
-5. Show full body from head to shoes.
-
-Aspect ratio ${ratio || '3:4'}. Generate 1 image.`;
+  // ── Outfit Swap: 3-step flow ──
+  // Step 1: Upload model image → generate portrait to establish identity
+  buildOutfitSetupPrompt(ratio) {
+    return `Generate a photo of this exact same person in a professional studio portrait. Aspect ratio ${ratio || '9:16'}. Single image only. Keep the exact same face, hair, and body.`;
   },
 
-  buildOutfitSwapRetryPrompt(ratio) {
-    return `The previous result was WRONG — the person does not look like the REAL person from Image 1. Try again:
+  // Step 2: Upload outfit image → describe outfit details
+  buildOutfitDescribePrompt() {
+    return `Look at this outfit image. Describe in detail: the type of clothing, fabric, pattern, color, design, neckline, sleeves, length, and any accessories. Be very specific about every detail.`;
+  },
 
-- The person MUST be the EXACT same real person from Image 1 — same real face, real skin, real body. NOT a new AI-generated person.
-- Preserve natural imperfections — do NOT beautify or smooth the skin
-- The outfit must match Image 2 exactly
-- Full body head to shoes
-- Aspect ratio ${ratio || '3:4'}. Generate 1 image.`;
+  // Step 3: Combine person (from step 1) + outfit (from step 2) → final image
+  buildOutfitCombinePrompt(ratio, scene) {
+    const scenePart = scene ? ` Setting/background: ${scene}.` : ' Professional studio lighting, clean background.';
+    return `Now generate a new full-body fashion photo of the same person you generated above, wearing the exact outfit from the image I just showed you. Keep every detail of the outfit: pattern, color, fabric, design. Full body standing pose, head to toe.${scenePart} Aspect ratio ${ratio || '9:16'}. Generate 1 image.`;
+  },
+
+  // Legacy single-prompt fallback (kept for Grok compatibility)
+  buildOutfitSwapPrompt(ratio) {
+    return `Virtual try-on: Combine these 2 images into 1 fashion photo.
+- Person/face/body → take from Image 1
+- Outfit/clothing → take from Image 2
+
+Keep the same face as Image 1. Keep the exact outfit design, pattern, color, fabric from Image 2.
+Full body, standing pose, fashion photography.
+Aspect ratio ${ratio || '9:16'}. Generate 1 image.`;
+  },
+
+  buildOutfitSwapRetryPrompt(ratio, scene) {
+    const scenePart = scene ? ` Setting/background: ${scene}.` : '';
+    return `The previous result was not accurate. Generate a new photo of the same person from earlier, wearing the exact outfit I showed you. Keep all outfit details: pattern, color, fabric, design. Full body standing pose.${scenePart} Aspect ratio ${ratio || '9:16'}. Generate 1 image.`;
   },
 
   buildVideoPrompt(actionPrompt, ratio) {

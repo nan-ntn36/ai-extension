@@ -331,28 +331,20 @@ const GrokImagineAdapter = {
 
   // Grok Imagine — outfit swap prompts
   buildOutfitSwapPrompt(ratio) {
-    return `Look at the two images I uploaded. Image 1 is the REAL person. Image 2 shows the outfit.
+    return `Virtual try-on: Combine these 2 images into 1 fashion photo.
+- Person/face/body → take from Image 1
+- Outfit/clothing → take from Image 2
 
-TASK: Put the outfit from Image 2 onto the REAL person in Image 1.
-
-CRITICAL RULES:
-1. The person in the result MUST be the EXACT SAME REAL person from Image 1 — NOT a new person, NOT a recreation, NOT an idealized version. Use their ACTUAL face, ACTUAL body, ACTUAL skin, ACTUAL hair exactly as they appear in the photo.
-2. Preserve ALL natural features of the real person — including skin texture, moles, wrinkles, asymmetries, blemishes. Do NOT beautify, smooth, or idealize.
-3. The outfit must match Image 2 exactly — same design, color, pattern, fabric, fit.
-4. The result should look like a real photograph of THIS specific real person wearing that outfit.
-5. Show full body from head to shoes.
-
-Aspect ratio ${ratio || '3:4'}. Generate 1 image.`;
+Keep the same face as Image 1. Keep the exact outfit design, pattern, color, fabric from Image 2.
+Full body, standing pose, fashion photography.
+Aspect ratio ${ratio || '9:16'}. Generate 1 image.`;
   },
 
   buildOutfitSwapRetryPrompt(ratio) {
-    return `The previous result was WRONG — the person does not look like the REAL person from Image 1. Try again:
-
-- The person MUST be the EXACT same real person from Image 1 — same real face, real skin, real body. NOT a new AI-generated person.
-- Preserve natural imperfections — do NOT beautify or smooth the skin
-- The outfit must match Image 2 exactly
-- Full body head to shoes
-- Aspect ratio ${ratio || '3:4'}. Generate 1 image.`;
+    return `Try again. Combine the 2 uploaded images into 1 photo:
+- Face and body from Image 1
+- Outfit details (pattern, color, design) from Image 2
+Full body standing pose. Aspect ratio ${ratio || '9:16'}. Generate 1 image.`;
   },
 
   // Stubs — not needed for Grok Imagine

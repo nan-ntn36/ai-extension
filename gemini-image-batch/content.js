@@ -228,6 +228,13 @@
                   </div>
                   <input type="number" class="gbig-count-input" id="gbig-outfit-image-count" value="1" min="1" max="20" />
                 </div>
+                <div class="gbig-count-row" style="margin-top:8px">
+                  <div class="gbig-toggle-info">
+                    <span class="gbig-toggle-icon">🏞️</span>
+                    <span class="gbig-toggle-label">Bối cảnh</span>
+                  </div>
+                  <input type="text" class="gbig-text-input" id="gbig-outfit-scene" placeholder="VD: studio, biển, tiệm quần áo..." />
+                </div>
               </div>
 
               <div class="gbig-section">
@@ -1789,49 +1796,82 @@ Be as detailed as possible. Emphasize the Vietnamese/Asian features. Just give m
     swapBtn.innerHTML = '⏳ Đang xử lý...';
     state.shouldStop = false;
     seenImageUrls.clear();
-    console.log('[GBIG] Outfit swap starting. Ratio:', state.outfitRatio, 'Count:', totalImages);
+    console.log('[GBIG] Outfit swap starting (3-step flow). Ratio:', state.outfitRatio, 'Count:', totalImages);
 
     const resultsBody = $('#gbig-results-body');
     resultsBody.innerHTML = '';
     let allImages = [];
 
+    // Read ratio directly from DOM
+    const activeRatioBtn = document.querySelector('.outfit-ratio.active');
+    const outfitRatio = activeRatioBtn?.dataset?.ratio || state.outfitRatio || '9:16';
+
     try {
+      // ═══════════════════════════════════════════════
+      // STEP 1: Upload model image → Generate portrait
+      // This establishes the person's identity in Gemini's context
+      // ═══════════════════════════════════════════════
+      progressText.textContent = '📷 Bước 1/3: Upload ảnh người mẫu...';
+      console.log('[GBIG] Outfit Step 1: Uploading model image...');
+      await uploadOutfitImage(state.outfitModelImage);
+      await sleep(1000);
+
+      const setupPrompt = ADAPTER?.buildOutfitSetupPrompt?.(outfitRatio) ||
+        `Generate a photo of this exact same person in a professional studio portrait. Aspect ratio ${outfitRatio}. Single image only. Keep the exact same face, hair, and body.`;
+
+      progressText.textContent = '🎨 Bước 1/3: Tạo ảnh chân dung...';
+      await typeIntoChatInput(setupPrompt);
+      await sleep(300);
+      await clickSendButton();
+
+      const setupResult = await waitForGeminiResponse(180000);
+      await sleep(2000);
+      console.log('[GBIG] Outfit Step 1 complete. Got', (setupResult.images || []).length, 'portrait images');
+
+      if (state.shouldStop) { swapBtn.disabled = false; swapBtn.innerHTML = '👗 Bắt đầu thay trang phục'; return; }
+
+      // ═══════════════════════════════════════════════
+      // STEP 2: Upload outfit image → Describe outfit
+      // This gives Gemini the outfit reference in context
+      // ═══════════════════════════════════════════════
+      progressText.textContent = '👗 Bước 2/3: Upload ảnh trang phục...';
+      console.log('[GBIG] Outfit Step 2: Uploading clothes image...');
+      await uploadOutfitImage(state.outfitClothesImage);
+      await sleep(1000);
+
+      const describePrompt = ADAPTER?.buildOutfitDescribePrompt?.() ||
+        `Look at this outfit image. Describe in detail: the type of clothing, fabric, pattern, color, design, neckline, sleeves, length, and any accessories. Be very specific about every detail.`;
+
+      progressText.textContent = '📝 Bước 2/3: Phân tích trang phục...';
+      await typeIntoChatInput(describePrompt);
+      await sleep(300);
+      await clickSendButton();
+
+      const describeResult = await waitForGeminiResponse(120000);
+      await sleep(2000);
+      console.log('[GBIG] Outfit Step 2 complete. Outfit described.');
+
+      if (state.shouldStop) { swapBtn.disabled = false; swapBtn.innerHTML = '👗 Bắt đầu thay trang phục'; return; }
+
+      // ═══════════════════════════════════════════════
+      // STEP 3: Combine person + outfit → Final image(s)
+      // Now Gemini has both person and outfit in context
+      // ═══════════════════════════════════════════════
       for (let round = 0; round < totalImages; round++) {
         if (state.shouldStop) break;
 
-        progressText.textContent = `📷 Upload ảnh... (${round + 1}/${totalImages})`;
+        progressText.textContent = `✨ Bước 3/3: Tạo ảnh kết hợp ${round + 1}/${totalImages}...`;
+        console.log(`[GBIG] Outfit Step 3: Generating combined image ${round + 1}/${totalImages}...`);
 
-        // Read ratio directly from DOM
-        const activeRatioBtn = document.querySelector('.outfit-ratio.active');
-        const outfitRatio = activeRatioBtn?.dataset?.ratio || state.outfitRatio || '3:4';
+        // Read background scene from input
+        const sceneInput = $('#gbig-outfit-scene');
+        const scene = sceneInput?.value?.trim() || '';
+        const scenePart = scene ? ` Setting/background: ${scene}.` : ' Professional studio lighting, clean background.';
 
-        // ═══ Direct 2-image upload flow (works on ALL sites) ═══
-        console.log('[GBIG] Outfit: Uploading model image...');
-        await uploadOutfitImage(state.outfitModelImage);
-        await sleep(800);
+        const combinePrompt = ADAPTER?.buildOutfitCombinePrompt?.(outfitRatio, scene) ||
+          `Now generate a new full-body fashion photo of the same person you generated above, wearing the exact outfit from the image I just showed you. Keep every detail of the outfit: pattern, color, fabric, design. Full body standing pose, head to toe.${scenePart} Aspect ratio ${outfitRatio}. Generate 1 image.`;
 
-        console.log('[GBIG] Outfit: Uploading clothes image...');
-        await uploadOutfitImage(state.outfitClothesImage);
-        await sleep(1000);
-
-        console.log('[GBIG] Outfit ratio:', outfitRatio);
-        progressText.textContent = `🎨 Tạo ảnh ${round + 1}/${totalImages}...`;
-        const prompt = ADAPTER?.buildOutfitSwapPrompt?.(outfitRatio) ||
-          `Look at the two images I uploaded. Image 1 is the person/model. Image 2 shows the outfit/clothing.
-
-TASK: Generate a FULL BODY photo (head to toe) of the EXACT SAME person from Image 1, wearing the EXACT outfit from Image 2.
-
-CRITICAL — OUTFIT MUST NOT BE DISTORTED OR MODIFIED:
-- Copy the outfit from Image 2 PIXEL-PERFECTLY — same proportions, same silhouette, same construction
-- Do NOT stretch, shrink, redesign, simplify, or reinterpret ANY part of the outfit
-
-PERSON REQUIREMENTS:
-- DO NOT ALTER THE FACE — keep exact same facial features, identity
-- FULL BODY framing — show the entire person from head to shoes
-
-Aspect ratio ${outfitRatio}. Generate exactly 1 single image only.`;
-
-        await typeIntoChatInput(prompt);
+        await typeIntoChatInput(combinePrompt);
         await sleep(300);
         await clickSendButton();
 
@@ -1904,12 +1944,11 @@ Aspect ratio ${outfitRatio}. Generate exactly 1 single image only.`;
     progressText.textContent = '🔄 Tạo lại với bảo vệ khuôn mặt nghiêm ngặt...';
 
     try {
-      const prompt = ADAPTER?.buildOutfitSwapRetryPrompt?.(state.outfitRatio) ||
-        `The previous result was NOT correct. Regenerate with STRICT requirements:
-- Show FULL BODY from head to toe (do not crop)
-- Outfit must match Image 2 EXACTLY — copy every detail: neckline, sleeves, length, pattern, color, fabric
-- DO NOT ALTER FACE IN ANY WAY
-- Generate exactly 1 single FULL BODY photo. Aspect ratio ${state.outfitRatio || '3:4'}.`;
+      const sceneInput = $('#gbig-outfit-scene');
+      const scene = sceneInput?.value?.trim() || '';
+      const scenePart = scene ? ` Setting/background: ${scene}.` : '';
+      const prompt = ADAPTER?.buildOutfitSwapRetryPrompt?.(state.outfitRatio, scene) ||
+        `The previous result was not accurate. Generate a new photo of the same person from earlier, wearing the exact outfit I showed you. Keep all outfit details: pattern, color, fabric, design. Full body standing pose.${scenePart} Aspect ratio ${state.outfitRatio || '9:16'}. Generate 1 image.`;
 
       await typeIntoChatInput(prompt);
       await sleep(300);
