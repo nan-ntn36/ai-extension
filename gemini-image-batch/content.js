@@ -37,9 +37,13 @@
     outfitClothesImage: null,   // { dataUrl, file }
     outfitRatio: '1:1',
     outfitImageCount: 1,        // number of images to generate
-    // Video
-    videoImage: null,           // { dataUrl, file }
-    videoPlatform: 'chat',      // 'chat' or 'flow'
+    // Video (Batch)
+    videoImages: [],             // [{ dataUrl, file, name }]
+    videoPrompts: [],            // string[]
+    videoSaveFolder: 'AI_Video', // download folder prefix
+    videoCount: 1,               // videos per image
+    videoPlatform: 'flow',       // default to flow
+    videoShouldStop: false,
     // Auto-Save
     autoSave: false,
     savePrefix: 'AI_Generated',
@@ -254,35 +258,55 @@
 
             </div>
 
-            <!-- ═══ TAB: VIDEO ═══ -->
+            <!-- ═══ TAB: VIDEO (Batch) ═══ -->
             <div class="gbig-tab-content" data-tab-content="video">
 
               <div class="gbig-section">
-                <div class="gbig-section-label"><span class="num">1</span> Ảnh nguồn</div>
-                <div class="gbig-upload-zone gbig-upload-small" id="gbig-video-image-zone">
-                  <div class="upload-icon">🎬</div>
-                  <div class="upload-text">Kéo thả ảnh để <strong>tạo video</strong></div>
+                <div class="gbig-section-label"><span class="num">1</span> Folder ảnh nguồn</div>
+                <div class="gbig-upload-zone gbig-upload-small" id="gbig-video-folder-zone">
+                  <div class="upload-icon">📁</div>
+                  <div class="upload-text">Bấm để chọn <strong>folder chứa ảnh</strong></div>
                 </div>
-                <input type="file" id="gbig-video-image-input" accept="image/*" style="display:none" />
+                <input type="file" id="gbig-video-folder-input" webkitdirectory multiple accept="image/*" style="display:none" />
+                <div class="gbig-video-image-list" id="gbig-video-image-list" style="max-height:120px;overflow-y:auto;margin-top:6px;font-size:12px;display:none"></div>
               </div>
 
               <div class="gbig-section">
-                <div class="gbig-section-label"><span class="num">2</span> Hành động / Prompt</div>
-                <textarea class="gbig-prompt-textarea" id="gbig-video-prompt" placeholder="Mô tả hành động... (VD: walking on beach, turning around slowly, smiling at camera)" rows="3"></textarea>
+                <div class="gbig-section-label"><span class="num">2</span> Prompts <small style="opacity:.6">(cách nhau bằng dấu <code>;</code>)</small></div>
+                <textarea class="gbig-prompt-textarea" id="gbig-video-prompt" placeholder="prompt 1 ; prompt 2 ; prompt 3&#10;Hoặc import từ file .txt" rows="3"></textarea>
+                <div style="display:flex;gap:6px;margin-top:6px">
+                  <button class="gbig-toolbar-btn" id="gbig-video-import-prompt-btn" title="Import prompts từ file .txt">📄 Import file</button>
+                  <button class="gbig-toolbar-btn" id="gbig-video-add-prompt-btn" title="Thêm prompts từ textarea">➕ Thêm</button>
+                  <button class="gbig-toolbar-btn" id="gbig-video-clear-prompt-btn" title="Xóa tất cả prompts">🗑️ Xóa</button>
+                </div>
+                <input type="file" id="gbig-video-prompt-file" accept=".txt" style="display:none" />
+                <div class="gbig-video-prompt-list" id="gbig-video-prompt-list" style="max-height:100px;overflow-y:auto;margin-top:6px;font-size:12px;display:none"></div>
               </div>
 
               <div class="gbig-section">
-                <div class="gbig-section-label"><span class="num">3</span> Nền tảng</div>
-                <div class="gbig-platform-group">
-                  <button class="gbig-platform-btn active" data-platform="chat">💬 Gemini/Grok Chat</button>
-                  <button class="gbig-platform-btn" data-platform="grok-imagine">🎥 Grok Imagine</button>
-                  <button class="gbig-platform-btn" data-platform="flow">🎬 Veo 3 (Flow)</button>
+                <div class="gbig-section-label"><span class="num">3</span> Tùy chọn</div>
+                <div class="gbig-count-row" style="margin-top:4px">
+                  <div class="gbig-toggle-info">
+                    <span class="gbig-toggle-icon">🔢</span>
+                    <span class="gbig-toggle-label">Số video / ảnh</span>
+                  </div>
+                  <input type="number" class="gbig-count-input" id="gbig-video-count" value="1" min="1" max="10" />
+                </div>
+                <div class="gbig-count-row" style="margin-top:8px">
+                  <div class="gbig-toggle-info">
+                    <span class="gbig-toggle-icon">💾</span>
+                    <span class="gbig-toggle-label">Folder lưu video</span>
+                  </div>
+                  <input type="text" class="gbig-text-input" id="gbig-video-save-folder" value="AI_Video" placeholder="Tên folder..." style="width:120px" />
                 </div>
               </div>
 
               <div class="gbig-section">
                 <button class="gbig-execute-btn" id="gbig-video-generate-btn">
-                  ▶ Tạo Video
+                  ▶ Bắt đầu tạo Video hàng loạt
+                </button>
+                <button class="gbig-execute-btn gbig-stop-btn" id="gbig-video-stop-btn" style="display:none;background:#ef4444">
+                  ⏹ Dừng
                 </button>
                 <div class="gbig-progress" id="gbig-video-progress">
                   <div class="gbig-progress-bar-bg">
@@ -463,20 +487,70 @@
     const retryBtn = $('#gbig-outfit-retry-btn');
     if (retryBtn) retryBtn.addEventListener('click', retryOutfitSwap);
 
-    // ═══ VIDEO EVENTS ═══
-    setupUploadZone('gbig-video-image-zone', 'gbig-video-image-input', 'videoImage');
-
-    // Video platform selector
-    $$('.gbig-platform-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        $$('.gbig-platform-btn').forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
-        state.videoPlatform = btn.dataset.platform;
+    // ═══ VIDEO BATCH EVENTS ═══
+    // Folder image picker
+    const videoFolderZone = $('#gbig-video-folder-zone');
+    const videoFolderInput = $('#gbig-video-folder-input');
+    if (videoFolderZone && videoFolderInput) {
+      videoFolderZone.addEventListener('click', () => videoFolderInput.click());
+      videoFolderInput.addEventListener('change', () => {
+        const files = Array.from(videoFolderInput.files).filter(f => f.type.startsWith('image/'));
+        state.videoImages = files.map(f => ({ file: f, name: f.name }));
+        renderVideoImageList();
+        videoFolderInput.value = '';
       });
+    }
+
+    // Video prompts — add from textarea (split by ;)
+    $('#gbig-video-add-prompt-btn')?.addEventListener('click', () => {
+      const ta = $('#gbig-video-prompt');
+      if (!ta) return;
+      const raw = ta.value.trim();
+      if (!raw) return;
+      const newPrompts = raw.split(';').map(p => p.trim()).filter(Boolean);
+      state.videoPrompts.push(...newPrompts);
+      ta.value = '';
+      renderVideoPromptList();
     });
 
+    // Video prompts — import from .txt file
+    const videoPromptFile = $('#gbig-video-prompt-file');
+    $('#gbig-video-import-prompt-btn')?.addEventListener('click', () => videoPromptFile?.click());
+    videoPromptFile?.addEventListener('change', () => {
+      if (!videoPromptFile.files[0]) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        const newPrompts = reader.result.split(';').map(p => p.trim()).filter(Boolean);
+        state.videoPrompts.push(...newPrompts);
+        renderVideoPromptList();
+      };
+      reader.readAsText(videoPromptFile.files[0]);
+      videoPromptFile.value = '';
+    });
+
+    // Video prompts — clear
+    $('#gbig-video-clear-prompt-btn')?.addEventListener('click', () => {
+      state.videoPrompts = [];
+      renderVideoPromptList();
+    });
+
+    // Video count
+    const videoCountInput = $('#gbig-video-count');
+    videoCountInput?.addEventListener('input', e => {
+      const val = parseInt(e.target.value, 10);
+      state.videoCount = (val && val >= 1) ? val : 1;
+    });
+
+    // Video save folder
+    $('#gbig-video-save-folder')?.addEventListener('input', e => {
+      state.videoSaveFolder = e.target.value.trim() || 'AI_Video';
+    });
+
+    // Video generate + stop
     const videoBtn = $('#gbig-video-generate-btn');
     if (videoBtn) videoBtn.addEventListener('click', startVideoGeneration);
+    const videoStopBtn = $('#gbig-video-stop-btn');
+    if (videoStopBtn) videoStopBtn.addEventListener('click', () => { state.videoShouldStop = true; });
 
     // ═══ AUTO-SAVE EVENTS ═══
     const autoSaveCb = $('#gbig-auto-save-cb');
@@ -596,6 +670,61 @@
     const d = document.createElement('div');
     d.textContent = str;
     return d.innerHTML;
+  }
+
+  // ── Video Batch: Render loaded image list ──
+  function renderVideoImageList() {
+    const listEl = $('#gbig-video-image-list');
+    const zone = $('#gbig-video-folder-zone');
+    if (!listEl) return;
+    if (state.videoImages.length === 0) {
+      listEl.style.display = 'none';
+      if (zone) {
+        zone.classList.remove('has-image');
+        zone.innerHTML = '<div class="upload-icon">📁</div><div class="upload-text">Bấm để chọn <strong>folder chứa ảnh</strong></div>';
+      }
+      return;
+    }
+    listEl.style.display = 'block';
+    if (zone) {
+      zone.classList.add('has-image');
+      zone.innerHTML = `<div class="upload-icon">📁</div><div class="upload-text"><strong>${state.videoImages.length}</strong> ảnh đã chọn</div>`;
+    }
+    listEl.innerHTML = state.videoImages.map((img, i) =>
+      `<div style="display:flex;justify-content:space-between;align-items:center;padding:2px 4px;border-bottom:1px solid rgba(255,255,255,0.06)">
+        <span style="opacity:.8">📷 ${escapeHtml(img.name)}</span>
+        <button class="gbig-video-img-remove" data-idx="${i}" style="background:none;border:none;color:#ef4444;cursor:pointer;font-size:11px">✕</button>
+      </div>`
+    ).join('');
+    $$('.gbig-video-img-remove', listEl).forEach(btn => {
+      btn.addEventListener('click', () => {
+        state.videoImages.splice(parseInt(btn.dataset.idx), 1);
+        renderVideoImageList();
+      });
+    });
+  }
+
+  // ── Video Batch: Render prompt list ──
+  function renderVideoPromptList() {
+    const listEl = $('#gbig-video-prompt-list');
+    if (!listEl) return;
+    if (state.videoPrompts.length === 0) {
+      listEl.style.display = 'none';
+      return;
+    }
+    listEl.style.display = 'block';
+    listEl.innerHTML = state.videoPrompts.map((p, i) =>
+      `<div style="display:flex;justify-content:space-between;align-items:center;padding:2px 4px;border-bottom:1px solid rgba(255,255,255,0.06)">
+        <span style="opacity:.8;max-width:85%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(p)}">${i + 1}. ${escapeHtml(p)}</span>
+        <button class="gbig-video-prompt-remove" data-idx="${i}" style="background:none;border:none;color:#ef4444;cursor:pointer;font-size:11px">✕</button>
+      </div>`
+    ).join('');
+    $$('.gbig-video-prompt-remove', listEl).forEach(btn => {
+      btn.addEventListener('click', () => {
+        state.videoPrompts.splice(parseInt(btn.dataset.idx), 1);
+        renderVideoPromptList();
+      });
+    });
   }
 
   // ── DOM Interaction ── (adapts to Gemini or Grok)
@@ -2336,279 +2465,378 @@ Be as detailed as possible. Emphasize the Vietnamese/Asian features. Just give m
       await sleep(500); // debounce
     }
   }
-
   // ══════════════════════════════════════════════════════
-  // VIDEO GENERATION — Create video from image + prompt
+  // VIDEO BATCH GENERATION — 2-Phase approach for Flow
+  // Phase 1: Upload ALL images to Flow's assets
+  // Phase 2: For each video: select asset → prompt → Create → wait
   // ══════════════════════════════════════════════════════
-
-  // Helper: find element by trying multiple selectors (for Flow's aria-label pattern)
-  function flowFindElement(selectorList) {
-    for (const sel of selectorList) {
-      try {
-        const el = document.querySelector(sel);
-        if (el) return el;
-      } catch { /* invalid selector, skip */ }
-    }
-    return null;
-  }
 
   async function startVideoGeneration() {
-    if (!state.videoImage) {
-      alert('Vui lòng upload ảnh nguồn cho video!');
+    // ── Validate inputs ──
+    if (state.videoImages.length === 0) {
+      alert('Vui lòng chọn folder chứa ảnh!');
       return;
     }
 
-    const videoPrompt = $('#gbig-video-prompt')?.value?.trim();
-    if (!videoPrompt) {
-      alert('Vui lòng nhập mô tả hành động cho video!');
+    let prompts = [...state.videoPrompts];
+    if (prompts.length === 0) {
+      const ta = $('#gbig-video-prompt');
+      const raw = ta?.value?.trim() || '';
+      if (raw) {
+        prompts = raw.split(';').map(p => p.trim()).filter(Boolean);
+      }
+    }
+    if (prompts.length === 0) {
+      alert('Vui lòng nhập hoặc import prompts!');
       return;
     }
+
+    const videoCount = state.videoCount || 1;
+    const totalJobs = state.videoImages.length * prompts.length * videoCount;
 
     const videoBtn = $('#gbig-video-generate-btn');
+    const stopBtn = $('#gbig-video-stop-btn');
     const progressText = $('#gbig-video-progress-text');
+    const progressBar = $('#gbig-video-progress-bar');
+
     videoBtn.disabled = true;
-    videoBtn.innerHTML = '⏳ Đang tạo video...';
+    videoBtn.style.display = 'none';
+    stopBtn.style.display = 'block';
+    state.videoShouldStop = false;
+
+    console.log(`[GBIG] 🎬 Batch video: ${state.videoImages.length} imgs × ${prompts.length} prompts × ${videoCount} = ${totalJobs}`);
 
     try {
-      if (SITE === 'grok-imagine') {
-        // ═══ ON GROK IMAGINE PAGE — full video automation ═══
-        progressText.textContent = '🎬 Cấu hình video trên Grok Imagine...';
-        const builtPrompt = ADAPTER?.buildVideoPrompt?.(videoPrompt, state.selectedRatio) || videoPrompt;
+      // ═══════════════════════════════════════════════
+      // PHASE 1: Upload ALL images to Flow's assets
+      // ═══════════════════════════════════════════════
+      progressText.textContent = `📤 Phase 1: Tải ${state.videoImages.length} ảnh lên assets...`;
 
-        if (ADAPTER?.generateVideo) {
-          const ok = await ADAPTER.generateVideo(state.videoImage.file, builtPrompt, {
-            ratio: state.selectedRatio || '9:16',
-            duration: '6s',
-            resolution: '720p',
-          });
-          if (ok) {
-            progressText.textContent = '⏳ Đã gửi! Video đang được tạo... kiểm tra kết quả trên trang.';
-          } else {
-            progressText.textContent = '⚠️ Không thể tự động hóa. Vui lòng tạo thủ công.';
+      const assetCountBefore = ADAPTER?.findAssetThumbnails?.()?.length || 0;
+      console.log(`[GBIG] Assets before: ${assetCountBefore}`);
+
+      for (let i = 0; i < state.videoImages.length; i++) {
+        if (state.videoShouldStop) break;
+
+        const imgObj = state.videoImages[i];
+        progressText.textContent = `📤 Tải ảnh ${i + 1}/${state.videoImages.length}: ${imgObj.name}...`;
+        if (progressBar) progressBar.style.width = `${((i) / state.videoImages.length) * 30}%`;
+
+        // Upload via adapter or fallback
+        let uploaded = false;
+        if (ADAPTER?.uploadToAssets) {
+          uploaded = ADAPTER.uploadToAssets(imgObj.file);
+        }
+        if (!uploaded) {
+          const fileInputs = $$('input[type="file"]');
+          for (const input of fileInputs) {
+            if (input.id?.startsWith('gbig-')) continue;
+            try {
+              const dt = new DataTransfer();
+              dt.items.add(imgObj.file);
+              input.files = dt.files;
+              input.dispatchEvent(new Event('change', { bubbles: true }));
+              uploaded = true;
+              break;
+            } catch (e) { console.warn('[GBIG] Upload failed:', e); }
           }
-        } else {
-          progressText.textContent = '❌ Adapter grok-imagine chưa sẵn sàng.';
         }
 
-      } else if (SITE === 'flow') {
-        // ═══ ON FLOW PAGE — automate directly ═══
-        await generateVideoOnFlow(videoPrompt, progressText);
+        if (uploaded) {
+          console.log(`[GBIG] ✅ Uploaded ${imgObj.name}`);
+        } else {
+          console.warn(`[GBIG] ⚠️ Failed to upload ${imgObj.name}`);
+        }
 
-      } else if (state.videoPlatform === 'flow') {
-        // ═══ ON GEMINI/GROK but user wants Flow — open new tab ═══
-        progressText.textContent = '🎬 Mở Veo 3 Flow...';
-        window.open(`https://labs.google/fx/tools/flow`, '_blank');
-        progressText.textContent = '✅ Đã mở Flow. Chuyển sang tab Flow → extension sẽ tự động hóa ở đó.';
-
-      } else if (state.videoPlatform === 'grok-imagine') {
-        // ═══ ON other site but user wants Grok Imagine — open new tab ═══
-        progressText.textContent = '🎬 Mở Grok Imagine...';
-        window.open('https://grok.com/imagine', '_blank');
-        progressText.textContent = '✅ Đã mở Grok Imagine. Chuyển sang tab đó → extension sẽ tự động hóa.';
-
-      } else {
-        // ═══ IN-CHAT video generation (Gemini/Grok) ═══
-        progressText.textContent = 'Uploading ảnh...';
-        await uploadImageFile(state.videoImage.file);
-        await sleep(1000);
-
-        const prompt = ADAPTER?.buildVideoPrompt?.(videoPrompt, state.selectedRatio) ||
-          `Generate an actual video (not text). Create a short video clip based on this image.
-
-Action: ${videoPrompt}
-
-IMPORTANT:
-- Output must be a VIDEO FILE, not a text description
-- Do NOT describe or write a script — GENERATE the actual video
-- Keep the same person and appearance
-- Smooth cinematic motion, 5-8 seconds
-- If you cannot generate video, say "VIDEO_NOT_SUPPORTED"`;
-
-        progressText.textContent = '🎬 Tạo video...';
-        await typeIntoChatInput(prompt);
-        await sleep(300);
-        await clickSendButton();
-
-        const result = await waitForGeminiResponse(300000); // Videos take longer
+        // Wait for upload to process
         await sleep(3000);
 
-        // ── Validate response: check if AI returned text instead of video ──
-        // Grok supports video natively; Gemini may not
-        const responseText = extractLastResponseText();
-        const hasVideoElement = !!document.querySelector('video[src], video source, [data-testid*="video"]');
-
-        if (SITE === 'grok') {
-          // Grok supports video — check for video element
-          if (hasVideoElement) {
-            progressText.textContent = '✅ Video đã được tạo! Xem trong chat.';
-          } else {
-            // Grok might still be processing or returned text
-            progressText.textContent = '⏳ Video có thể đang xử lý. Kiểm tra phản hồi trong chat.';
-            console.log('[GBIG] Grok video: no <video> element found yet, response may still be loading.');
-          }
-        } else {
-          // Gemini — likely doesn't support video generation
-          const isTextOnly = responseText && (
-            responseText.includes('VIDEO_NOT_SUPPORTED') ||
-            responseText.includes('cannot generate video') ||
-            responseText.includes('can\'t generate video') ||
-            responseText.includes('unable to create video') ||
-            responseText.includes('not able to generate video') ||
-            (responseText.length > 200 && !hasVideoElement)
-          );
-
-          if (isTextOnly) {
-            progressText.textContent = '⚠️ Gemini chưa hỗ trợ tạo video. Hãy dùng Grok hoặc Veo 3 (Flow)!';
-            console.warn('[GBIG] ⚠️ Gemini returned text description, not actual video.');
-          } else {
-            progressText.textContent = '✅ Video đã được tạo! Xem trong chat.';
-          }
+        // Wait for asset thumbnail to appear (up to 15s)
+        const expectedCount = assetCountBefore + i + 1;
+        const uploadStart = Date.now();
+        while (Date.now() - uploadStart < 15000) {
+          const currentCount = ADAPTER?.findAssetThumbnails?.()?.length || 0;
+          if (currentCount >= expectedCount) break;
+          await sleep(1000);
         }
+      }
+
+      if (state.videoShouldStop) {
+        progressText.textContent = '⏹ Đã dừng trong quá trình tải ảnh.';
+        videoBtn.disabled = false; videoBtn.style.display = 'block'; stopBtn.style.display = 'none';
+        return;
+      }
+
+      const assetCountAfter = ADAPTER?.findAssetThumbnails?.()?.length || 0;
+      console.log(`[GBIG] Phase 1 done. Assets: ${assetCountBefore} → ${assetCountAfter}`);
+      progressText.textContent = `✅ Đã tải ${state.videoImages.length} ảnh. Bắt đầu tạo video...`;
+      await sleep(2000);
+
+      // ═══════════════════════════════════════════════
+      // PHASE 2: Create videos — add_2 popup → select by name → prompt → Create
+      // ═══════════════════════════════════════════════
+      let completed = 0;
+      let errors = 0;
+
+      for (let imgIdx = 0; imgIdx < state.videoImages.length; imgIdx++) {
+        for (let pIdx = 0; pIdx < prompts.length; pIdx++) {
+          for (let r = 0; r < videoCount; r++) {
+            if (state.videoShouldStop) {
+              progressText.textContent = `⏹ Đã dừng. ${completed}/${totalJobs} video.`;
+              break;
+            }
+
+            const imgObj = state.videoImages[imgIdx];
+            const prompt = prompts[pIdx];
+            const jobNum = completed + errors + 1;
+
+            progressText.textContent = `🎬 [${jobNum}/${totalJobs}] "${imgObj.name}" (img ${imgIdx}) + Prompt ${pIdx + 1}...`;
+            if (progressBar) progressBar.style.width = `${30 + ((jobNum - 1) / totalJobs) * 70}%`;
+
+            try {
+              await generateVideoOnFlow(imgObj.name, prompt, progressText, imgIdx);
+              completed++;
+              console.log(`[GBIG] ✅ Video ${jobNum}/${totalJobs} done`);
+            } catch (err) {
+              errors++;
+              console.error(`[GBIG] ❌ Video ${jobNum}:`, err);
+              progressText.textContent = `⚠️ Lỗi video ${jobNum}: ${err.message}`;
+              await sleep(3000);
+            }
+
+            // Clear prompt for next video
+            if (jobNum < totalJobs && !state.videoShouldStop) {
+              progressText.textContent = `⏳ Chuẩn bị video tiếp...`;
+              await flowClearPrompt();
+              await sleep(2000);
+            }
+          }
+          if (state.videoShouldStop) break;
+        }
+        if (state.videoShouldStop) break;
+      }
+
+      if (progressBar) progressBar.style.width = '100%';
+      if (!state.videoShouldStop) {
+        progressText.textContent = `✅ Hoàn tất! ${completed}/${totalJobs} video (${errors} lỗi)`;
       }
     } catch (err) {
       progressText.textContent = `❌ Lỗi: ${err.message}`;
-      console.error('[GBIG] Video error:', err);
+      console.error('[GBIG] Video batch error:', err);
     }
 
     videoBtn.disabled = false;
-    videoBtn.innerHTML = '▶ Tạo Video';
+    videoBtn.style.display = 'block';
+    videoBtn.innerHTML = '▶ Bắt đầu tạo Video hàng loạt';
+    stopBtn.style.display = 'none';
   }
 
-  // ── Flow-specific: automate video generation on labs.google/flow ──
-  async function generateVideoOnFlow(actionPrompt, progressText) {
-    // Step 1: Upload image via file input (always present in DOM)
-    progressText.textContent = '📷 Upload ảnh frame...';
+  // ── Helper: Clear prompt textbox only ──
+  async function flowClearPrompt() {
+    const textbox = document.querySelector('div[role="textbox"][contenteditable="true"]') ||
+      document.querySelector('div[contenteditable="true"]');
+    if (textbox) {
+      textbox.focus();
+      document.execCommand('selectAll');
+      document.execCommand('delete');
+      textbox.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+  }
 
-    let uploaded = false;
-    if (ADAPTER?.uploadImage) {
-      uploaded = ADAPTER.uploadImage(state.videoImage.file);
-      if (uploaded) {
-        console.log('[GBIG] ✅ Frame uploaded via adapter.uploadImage()');
+  // ── Flow: automate ONE video ──
+  async function generateVideoOnFlow(imageName, actionPrompt, progressText, assetIndex) {
+    const idx = assetIndex || 0;
+
+    // ═══════════════════════════════════════
+    // STEP 1: Click add_2 button → open popup → select asset by index
+    // ═══════════════════════════════════════
+    progressText.textContent = `📷 Chọn ảnh "${imageName}" (index ${idx})...`;
+
+    // Find the add_2 button
+    let addBtn = null;
+    for (const btn of document.querySelectorAll('button')) {
+      const icon = btn.querySelector('i, .google-symbols');
+      if (icon?.textContent?.trim() === 'add_2') {
+        addBtn = btn;
+        break;
       }
     }
+    if (!addBtn) throw new Error('Không tìm thấy nút add_2');
 
-    if (!uploaded) {
-      // Fallback: find file input manually
-      const fileInputs = $$('input[type="file"]');
-      for (const input of fileInputs) {
-        if (input.id?.startsWith('gbig-')) continue;
-        try {
-          const dt = new DataTransfer();
-          dt.items.add(state.videoImage.file);
-          input.files = dt.files;
-          input.dispatchEvent(new Event('change', { bubbles: true }));
-          uploaded = true;
-          console.log('[GBIG] ✅ Frame uploaded via fallback file input');
-          break;
-        } catch (e) {
-          console.warn('[GBIG] File input failed:', e);
-        }
-      }
-    }
-
-    if (!uploaded) {
-      // Last resort: try drag-drop on the drop zone
-      console.warn('[GBIG] ⚠️ No file input found, trying drag-drop...');
-      const dropTarget = document.querySelector('[role="main"]') || document.body;
-      const dt = new DataTransfer();
-      dt.items.add(state.videoImage.file);
-      dropTarget.dispatchEvent(new DragEvent('dragenter', { bubbles: true, dataTransfer: dt }));
-      dropTarget.dispatchEvent(new DragEvent('dragover', { bubbles: true, dataTransfer: dt }));
-      dropTarget.dispatchEvent(new DragEvent('drop', { bubbles: true, dataTransfer: dt }));
-    }
+    // Click to open popup
+    addBtn.click();
+    console.log('[GBIG] ✅ Clicked add_2 button');
     await sleep(2000);
 
-    // Step 2: Enter prompt into contenteditable div
+    // Find popup via aria-controls ID
+    const popupId = addBtn.getAttribute('aria-controls');
+    let popup = popupId ? document.getElementById(popupId) : null;
+    if (!popup) {
+      // Fallback: try radix popper or role="dialog"
+      const popper = document.querySelector('[data-radix-popper-content-wrapper]');
+      popup = popper?.querySelector('[role="dialog"]') || document.querySelector('[role="dialog"][data-state="open"]');
+    }
+    if (!popup) throw new Error('Popup không mở được');
+
+    // Find items in virtuoso list
+    const items = popup.querySelectorAll('[data-item-index]');
+    console.log(`[GBIG] Popup has ${items.length} items, want index ${idx}`);
+    if (items.length === 0) throw new Error('Không có ảnh nào trong popup');
+
+    // Click the target item
+    const targetIdx = Math.min(idx, items.length - 1);
+    const item = items[targetIdx];
+    const clickTarget = item.querySelector('div') || item;
+    clickTarget.click();
+    console.log(`[GBIG] ✅ Clicked asset at index ${targetIdx}`);
+
+    // Wait for popup to close
+    await sleep(2000);
+
+    // ═══════════════════════════════════════
+    // STEP 2: Enter prompt (Slate.js editor)
+    // ═══════════════════════════════════════
     progressText.textContent = '✍️ Nhập prompt...';
     const builtPrompt = ADAPTER?.buildFrameToVideoPrompt?.(actionPrompt) || actionPrompt;
 
     let promptEntered = false;
-    if (ADAPTER?.typePrompt) {
-      promptEntered = ADAPTER.typePrompt(builtPrompt);
-      if (promptEntered) {
-        console.log('[GBIG] ✅ Prompt entered via adapter.typePrompt()');
+
+    for (let attempt = 0; attempt < 3 && !promptEntered; attempt++) {
+      if (attempt > 0) {
+        console.log(`[GBIG] Prompt retry ${attempt + 1}...`);
+        await sleep(1000);
       }
-    }
 
-    if (!promptEntered) {
-      // Fallback: find contenteditable div manually
-      const promptInput = document.querySelector('div[role="textbox"]') ||
-        document.querySelector('div[contenteditable="true"]');
-      if (promptInput) {
-        promptInput.focus();
-        promptInput.textContent = '';
-        document.execCommand('insertText', false, builtPrompt);
-        if (!promptInput.textContent.includes(builtPrompt.slice(0, 20))) {
-          promptInput.textContent = builtPrompt;
-          promptInput.dispatchEvent(new Event('input', { bubbles: true }));
-        }
-        promptEntered = true;
-        console.log('[GBIG] ✅ Prompt entered via fallback');
-      }
-    }
+      // Find the textbox (Slate.js contenteditable)
+      const textbox = document.querySelector('div[role="textbox"][contenteditable="true"]') ||
+        document.querySelector('div[role="textbox"]');
 
-    if (!promptEntered) {
-      console.error('[GBIG] ❌ Could not find prompt input on Flow');
-      progressText.textContent = '❌ Không tìm thấy ô nhập prompt. Vui lòng nhập thủ công.';
-      return;
-    }
-    await sleep(500);
+      if (!textbox || textbox.closest('#gbig-panel')) continue;
 
-    // Step 3: Click "Create" button (found by text content, not selector)
-    progressText.textContent = '🎬 Bấm Create...';
+      textbox.focus();
+      await sleep(300);
 
-    let clicked = false;
-    if (ADAPTER?.clickCreate) {
-      clicked = ADAPTER.clickCreate();
-      if (clicked) {
-        console.log('[GBIG] ✅ Create clicked via adapter.clickCreate()');
-      }
-    }
+      // Method 1: Slate.js beforeinput events
+      try {
+        const selection = window.getSelection();
+        const range = document.createRange();
+        range.selectNodeContents(textbox);
+        selection.removeAllRanges();
+        selection.addRange(range);
 
-    if (!clicked) {
-      // Fallback: find button by text
-      const buttons = document.querySelectorAll('button');
-      for (const btn of buttons) {
-        const text = btn.textContent.trim();
-        if (text.includes('Create') || text.includes('Generate')) {
-          btn.click();
-          clicked = true;
-          console.log('[GBIG] ✅ Create clicked via fallback text match');
+        textbox.dispatchEvent(new InputEvent('beforeinput', {
+          inputType: 'deleteContentBackward',
+          bubbles: true, cancelable: true,
+        }));
+        await sleep(100);
+
+        textbox.dispatchEvent(new InputEvent('beforeinput', {
+          inputType: 'insertText',
+          data: builtPrompt,
+          bubbles: true, cancelable: true,
+        }));
+        await sleep(200);
+
+        // Check if Slate updated
+        const slateSpan = textbox.querySelector('[data-slate-string="true"]');
+        if (slateSpan?.textContent?.includes(builtPrompt.slice(0, 20))) {
+          promptEntered = true;
+          console.log('[GBIG] ✅ Prompt via Slate beforeinput');
           break;
         }
+      } catch (e) {
+        console.warn('[GBIG] Slate beforeinput failed:', e);
       }
-    }
 
-    if (!clicked) {
-      console.warn('[GBIG] ⚠️ Create button not found. Vui lòng bấm thủ công.');
-      progressText.textContent = '⚠️ Không tìm thấy nút Create. Vui lòng bấm thủ công.';
-      return;
-    }
+      // Method 2: execCommand
+      try {
+        textbox.focus();
+        document.execCommand('selectAll');
+        document.execCommand('delete');
+        document.execCommand('insertText', false, builtPrompt);
+        if (textbox.textContent?.includes(builtPrompt.slice(0, 20))) {
+          promptEntered = true;
+          console.log('[GBIG] ✅ Prompt via execCommand');
+          break;
+        }
+      } catch (e) {
+        console.warn('[GBIG] execCommand failed:', e);
+      }
 
-    // Step 4: Wait for video generation (1-3 minutes typical)
-    progressText.textContent = '⏳ Đang tạo video... (có thể mất 1-3 phút)';
-
-    const maxWait = 300000; // 5 minutes max
-    const startTime = Date.now();
-    let videoFound = false;
-
-    while (Date.now() - startTime < maxWait) {
-      const videos = $$('video');
-      const newVideos = videos.filter(v => v.src || v.querySelector('source'));
-      if (newVideos.length > 0) {
-        videoFound = true;
+      // Method 3: Direct Slate span manipulation
+      const slateSpan = textbox.querySelector('[data-slate-string="true"]');
+      if (slateSpan) {
+        slateSpan.textContent = builtPrompt;
+        textbox.dispatchEvent(new Event('input', { bubbles: true }));
+        promptEntered = true;
+        console.log('[GBIG] ✅ Prompt via direct Slate span');
         break;
       }
 
+      // Method 4: Direct textContent
+      textbox.textContent = builtPrompt;
+      textbox.dispatchEvent(new Event('input', { bubbles: true }));
+      promptEntered = true;
+      console.log('[GBIG] ✅ Prompt via textContent');
+    }
+
+    if (!promptEntered) throw new Error('Không nhập được prompt');
+    await sleep(1000);
+
+    // ═══════════════════════════════════════
+    // STEP 3: Click main Create button
+    // ═══════════════════════════════════════
+    progressText.textContent = '🎬 Bấm Create...';
+    let clicked = false;
+
+    // Find by arrow_forward icon (confirmed working)
+    for (const btn of document.querySelectorAll('button')) {
+      if (btn.hasAttribute('aria-haspopup')) continue;
+      const icon = btn.querySelector('i, .google-symbols');
+      if (icon?.textContent?.trim() === 'arrow_forward') {
+        btn.click();
+        clicked = true;
+        console.log('[GBIG] ✅ Clicked Create button');
+        break;
+      }
+    }
+
+    if (!clicked) {
+      // Fallback: find hidden "Create" span
+      for (const btn of document.querySelectorAll('button')) {
+        if (btn.hasAttribute('aria-haspopup')) continue;
+        for (const span of btn.querySelectorAll('span')) {
+          if (span.textContent.trim() === 'Create') {
+            btn.click(); clicked = true; break;
+          }
+        }
+        if (clicked) break;
+      }
+    }
+    if (!clicked) throw new Error('Create button not found');
+
+    // ═══════════════════════════════════════
+    // STEP 4: Wait for video generation
+    // ═══════════════════════════════════════
+    progressText.textContent = '⏳ Đang tạo video... (1-3 phút)';
+    const maxWait = 300000;
+    const startTime = Date.now();
+    const existingVideos = $$('video').filter(v => v.src || v.querySelector('source')).length;
+
+    while (Date.now() - startTime < maxWait) {
+      if (state.videoShouldStop) break;
+      const currentVideos = $$('video').filter(v => v.src || v.querySelector('source')).length;
+      if (currentVideos > existingVideos) {
+        progressText.textContent = '✅ Video đã tạo!';
+        return;
+      }
       const elapsed = Math.round((Date.now() - startTime) / 1000);
       progressText.textContent = `⏳ Đang tạo video... ${elapsed}s`;
       await sleep(3000);
     }
 
-    if (videoFound) {
-      progressText.textContent = '✅ Video đã được tạo! Xem và tải về trong Flow.';
-    } else {
-      progressText.textContent = '⏳ Video vẫn đang xử lý. Kiểm tra trực tiếp trên Flow.';
+    if (!state.videoShouldStop) {
+      progressText.textContent = '⏳ Video vẫn đang xử lý...';
     }
   }
 
