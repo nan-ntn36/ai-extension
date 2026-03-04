@@ -2604,11 +2604,11 @@ Be as detailed as possible. Emphasize the Vietnamese/Asian features. Just give m
               await sleep(3000);
             }
 
-            // Clear prompt for next video
+            // Clear prompt for next video — no wait, Veo 3 queues requests
             if (jobNum < totalJobs && !state.videoShouldStop) {
-              progressText.textContent = `⏳ Chuẩn bị video tiếp...`;
+              progressText.textContent = `🔄 Chuẩn bị video ${jobNum + 1}/${totalJobs}...`;
               await flowClearPrompt();
-              await sleep(2000);
+              await sleep(1000);
             }
           }
           if (state.videoShouldStop) break;
@@ -2816,28 +2816,12 @@ Be as detailed as possible. Emphasize the Vietnamese/Asian features. Just give m
     if (!clicked) throw new Error('Create button not found');
 
     // ═══════════════════════════════════════
-    // STEP 4: Wait for video generation
+    // STEP 4: Fire-and-forget — Veo 3 supports continuous creation
     // ═══════════════════════════════════════
-    progressText.textContent = '⏳ Đang tạo video... (1-3 phút)';
-    const maxWait = 300000;
-    const startTime = Date.now();
-    const existingVideos = $$('video').filter(v => v.src || v.querySelector('source')).length;
-
-    while (Date.now() - startTime < maxWait) {
-      if (state.videoShouldStop) break;
-      const currentVideos = $$('video').filter(v => v.src || v.querySelector('source')).length;
-      if (currentVideos > existingVideos) {
-        progressText.textContent = '✅ Video đã tạo!';
-        return;
-      }
-      const elapsed = Math.round((Date.now() - startTime) / 1000);
-      progressText.textContent = `⏳ Đang tạo video... ${elapsed}s`;
-      await sleep(3000);
-    }
-
-    if (!state.videoShouldStop) {
-      progressText.textContent = '⏳ Video vẫn đang xử lý...';
-    }
+    progressText.textContent = '✅ Đã gửi tạo video! Chuyển sang video tiếp...';
+    console.log('[GBIG] ✅ Video request sent, moving to next immediately');
+    // Minimal delay — just enough for Flow to accept the request
+    await sleep(1000);
   }
 
   // ── Initialize ──
